@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Nuestro álbum digital</title>
+
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
+
+    <!-- Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+
+    <div class="background-glow"></div>
+
+    <header class="app-header">
+        <div class="logo">
+            <i class="fa-solid fa-camera-retro"></i>
+        </div>
+        <button id="add-photo-btn" class="btn-primary">
+            <i class="fa-solid fa-plus"></i> Añadir foto
+        </button>
+    </header>
+
+    <main class="gallery-container">
+        <div id="gallery-grid" class="gallery-grid">
+            <!-- Photos will be injected here -->
+        </div>
+
+        <div id="empty-state" class="empty-state hidden">
+            <i class="fa-regular fa-images"></i>
+            <h3>Tu álbum está vacío</h3>
+            <p>Empieza a guardar tus recuerdos ahora.</p>
+        </div>
+    </main>
+
+    <!-- Modal Form -->
+    <div id="modal-overlay" class="modal-overlay hidden">
+        <div class="modal">
+            <div class="modal-header">
+                <h2>Nuevo Recuerdo</h2>
+                <button id="close-modal" class="btn-icon"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <form id="photo-form">
+                <div class="form-group">
+                    <label for="photo-title">Título</label>
+                    <input type="text" id="photo-title" placeholder="Ej. Viaje a la playa" required>
+                </div>
+
+                <div class="form-group">
+                    <label for="photo-date">Fecha</label>
+                    <input type="date" id="photo-date" required>
+                </div>
+
+                <div class="form-group">
+                    <label>Imagen</label>
+                    <div id="file-input-container" class="input-container">
+                        <input type="file" id="photo-file" accept="image/*">
+                        <small style="color: var(--text-secondary); display: block; margin-top: 5px;">Recomendado:
+                            Imágenes menores a 2MB</small>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label for="photo-comment">Comentario</label>
+                    <textarea id="photo-comment" rows="3" placeholder="Un día inolvidable..."></textarea>
+                </div>
+
+                <button type="submit" class="btn-block">Guardar Foto</button>
+            </form>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+
+</html>
