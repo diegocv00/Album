@@ -24,11 +24,22 @@ document.addEventListener('DOMContentLoaded', async () => {
     const modalTitle = document.querySelector('.modal-header h2');
     const submitBtn = document.querySelector('#photo-form button[type="submit"]');
 
+    // Lightbox Elements
+    const lightboxOverlay = document.getElementById('lightbox-overlay');
+    const lightboxImg = document.getElementById('lightbox-img');
+    const lightboxClose = document.getElementById('lightbox-close');
+
     // Event Listeners
     addPhotoBtn.addEventListener('click', () => openModal());
     closeModalBtn.addEventListener('click', closeModal);
     modalOverlay.addEventListener('click', (e) => {
         if (e.target === modalOverlay) closeModal();
+    });
+
+    // Lightbox Listeners
+    lightboxClose.addEventListener('click', closeLightbox);
+    lightboxOverlay.addEventListener('click', (e) => {
+        if (e.target === lightboxOverlay) closeLightbox();
     });
 
     // Initial Load
@@ -181,7 +192,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                     </button>
                 </div>
                 <div class="card-image-container">
-                    <img src="${photo.url}" alt="${photo.title}" class="card-image" onerror="this.src='https://via.placeholder.com/400x300?text=Error+Loading'">
+                    <img src="${photo.url}" alt="${photo.title}" class="card-image" onclick="openLightbox('${photo.url}')" onerror="this.src='https://via.placeholder.com/400x300?text=Error+Loading'">
                 </div>
                 <div class="card-content">
                     <div class="card-header-line">
@@ -219,6 +230,20 @@ document.addEventListener('DOMContentLoaded', async () => {
         editingId = null;
     }
 
+    function openLightbox(url) {
+        lightboxImg.src = url;
+        lightboxOverlay.classList.remove('hidden');
+        setTimeout(() => lightboxOverlay.classList.add('active'), 10);
+    }
+
+    function closeLightbox() {
+        lightboxOverlay.classList.remove('active');
+        setTimeout(() => {
+            lightboxOverlay.classList.add('hidden');
+            lightboxImg.src = '';
+        }, 300);
+    }
+
     // --- Global Exports ---
 
     window.removePhoto = async (id) => {
@@ -247,4 +272,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         const photo = photos.find(p => p.id === id);
         if (photo) openModal(photo);
     };
+
+    window.openLightbox = openLightbox;
 });
