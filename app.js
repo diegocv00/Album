@@ -1,6 +1,15 @@
-document.addEventListener('DOMContentLoaded', () => {
-    // State
-    let photos = JSON.parse(localStorage.getItem('lumina_photos')) || [];
+document.addEventListener('DOMContentLoaded', async () => {
+    const { supabaseClient: supabase } = window;
+    let photos = []; // Local cache
+    let editingId = null;
+
+    function logError(msg) {
+        const consoleEl = document.getElementById('debug-console');
+        consoleEl.style.display = 'block';
+        consoleEl.innerText += 'ERROR: ' + msg + '\n';
+        console.error(msg);
+    }
+    window.logError = logError;
 
     // Elements
     const galleryGrid = document.getElementById('gallery-grid');
@@ -15,11 +24,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const modalTitle = document.querySelector('.modal-header h2');
     const submitBtn = document.querySelector('#photo-form button[type="submit"]');
 
-    let editingId = null;
-
-    // Initial Render
-    renderGallery();
-
     // Event Listeners
     addPhotoBtn.addEventListener('click', () => openModal());
     closeModalBtn.addEventListener('click', closeModal);
@@ -27,72 +31,128 @@ document.addEventListener('DOMContentLoaded', () => {
         if (e.target === modalOverlay) closeModal();
     });
 
+    // Initial Load
+    try {
+        await fetchPhotos();
+    } catch (e) {
+        logError('Error inicializando: ' + e.message);
+    }
+
     photoForm.addEventListener('submit', async (e) => {
         e.preventDefault();
 
+        // UI Indicators
+        const originalBtnText = submitBtn.textContent;
+        submitBtn.textContent = 'Guardando...';
+        submitBtn.disabled = true;
+
         const title = document.getElementById('photo-title').value;
         const comment = document.getElementById('photo-comment').value;
-        const dateValue = photoDate.value;
-        let finalUrl = '';
-
-        // If file selected, use it. 
+        const dateValue = photoDate.value || new Date().toISOString().split('T')[0];
         const file = photoFile.files[0];
-        if (file) {
-            if (file.size > 5 * 1024 * 1024) {
-                if (!confirm('La imagen es grande. ¿Continuar?')) return;
-            }
-            finalUrl = await toBase64(file);
-        } else if (editingId) {
-            // Keep existing URL if no new file
-            const existing = photos.find(p => p.id === editingId);
-            finalUrl = existing.url;
-        } else {
-            alert('Por favor selecciona una foto');
-            return;
-        }
-
-        if (editingId) {
-            // Update
-            photos = photos.map(p => {
-                if (p.id === editingId) {
-                    return { ...p, title, comment, url: finalUrl, date: dateValue };
-                }
-                return p;
-            });
-        } else {
-            // Create
-            const newPhoto = {
-                id: Date.now(),
-                title,
-                url: finalUrl,
-                comment,
-                date: dateValue || new Date().toISOString().split('T')[0] // Default to today if empty (though required)
-            };
-            photos.unshift(newPhoto);
-        }
 
         try {
-            savePhotos();
-            renderGallery();
+            if (editingId) {
+                // UPDATE FLOW
+                let updateData = { title, comment, date: dateValue };
+
+                if (file) {
+                    // 1. Upload new image
+                    const { imageUrl, storagePath } = await uploadImage(file);
+                    updateData.url = imageUrl;
+                    updateData.storage_path = storagePath;
+
+                    // 2. Delete old image (optional but good practice)
+                    const oldPhoto = photos.find(p => p.id === editingId);
+                    if (oldPhoto && oldPhoto.storage_path) {
+                        await supabase.storage.from('lumina-bucket').remove([oldPhoto.storage_path]);
+                    }
+                }
+
+                const { error } = await supabase.from('photos').update(updateData).eq('id', editingId);
+                if (error) throw error;
+
+            } else {
+                // CREATE FLOW
+                if (!file) {
+                    alert('Por favor selecciona una foto');
+                    resetBtn(originalBtnText);
+                    return;
+                }
+
+                // 1. Upload Image
+                const { imageUrl, storagePath } = await uploadImage(file);
+
+                // 2. Insert to DB
+                const { error } = await supabase.from('photos').insert({
+                    title,
+                    comment,
+                    date: dateValue,
+                    url: imageUrl,
+                    storage_path: storagePath
+                });
+
+                if (error) throw error;
+            }
+
+            // Success
+            await fetchPhotos(); // Refresh grid
             closeModal();
+            resetBtn(originalBtnText);
+
         } catch (err) {
-            alert('Error al guardar. Es posible que el almacenamiento local esté lleno.');
             console.error(err);
+            logError('Error guardando: ' + (err.message || JSON.stringify(err)));
+            alert('Error al guardar: ' + err.message);
+            resetBtn(originalBtnText);
         }
     });
 
-    // Functions
-    function toBase64(file) {
-        return new Promise((resolve, reject) => {
-            const reader = new FileReader();
-            reader.readAsDataURL(file);
-            reader.onload = () => resolve(reader.result);
-            reader.onerror = error => reject(error);
-        });
+    function resetBtn(text) {
+        submitBtn.textContent = text;
+        submitBtn.disabled = false;
     }
 
-    function savePhotos() {
-        localStorage.setItem('lumina_photos', JSON.stringify(photos));
+    // --- Core Functions ---
+
+    async function fetchPhotos() {
+        // Get photos from Supabase, newest first
+        const { data, error } = await supabase
+            .from('photos')
+            .select('*')
+            .order('id', { ascending: false });
+
+        if (error) {
+            logError('Error cargando fotos: ' + JSON.stringify(error));
+            console.error('Error fetching photos:', error);
+            return;
+        }
+
+        photos = data || [];
+        renderGallery();
+    }
+
+    async function uploadImage(file) {
+        const fileExt = file.name.split('.').pop();
+        const fileName = `${Date.now()}.${fileExt}`;
+        const filePath = `${fileName}`;
+
+        // Upload to 'lumina-bucket'
+        const { error: uploadError } = await supabase.storage
+            .from('lumina-bucket')
+            .upload(filePath, file);
+
+        if (uploadError) throw uploadError;
+
+        // Get Public URL
+        const { data } = supabase.storage
+            .from('lumina-bucket')
+            .getPublicUrl(filePath);
+
+        return {
+            imageUrl: data.publicUrl,
+            storagePath: filePath
+        };
     }
 
     function renderGallery() {
@@ -109,7 +169,6 @@ document.addEventListener('DOMContentLoaded', () => {
             const card = document.createElement('div');
             card.className = 'photo-card';
 
-            // Format date for display
             const displayDate = photo.date ? new Date(photo.date).toLocaleDateString() : '';
 
             card.innerHTML = `
@@ -122,7 +181,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     </button>
                 </div>
                 <div class="card-image-container">
-                    <img src="${photo.url}" alt="${photo.title}" class="card-image" onerror="this.src='https://via.placeholder.com/400x300?text=No+Image'">
+                    <img src="${photo.url}" alt="${photo.title}" class="card-image" onerror="this.src='https://via.placeholder.com/400x300?text=Error+Loading'">
                 </div>
                 <div class="card-content">
                     <div class="card-header-line">
@@ -132,7 +191,6 @@ document.addEventListener('DOMContentLoaded', () => {
                     <p class="card-comment">${photo.comment}</p>
                 </div>
             `;
-
             galleryGrid.appendChild(card);
         });
     }
@@ -145,21 +203,13 @@ document.addEventListener('DOMContentLoaded', () => {
             submitBtn.textContent = 'Actualizar Foto';
             document.getElementById('photo-title').value = photo.title;
             document.getElementById('photo-comment').value = photo.comment;
-
-            // Handle date
-            if (photo.date) {
-                // Should be YYYY-MM-DD
-                photoDate.value = photo.date;
-            } else {
-                photoDate.valueAsDate = new Date();
-            }
-
+            if (photo.date) photoDate.value = photo.date;
         } else {
             editingId = null;
             modalTitle.textContent = 'Nuevo Recuerdo';
             submitBtn.textContent = 'Guardar Foto';
             photoForm.reset();
-            photoDate.valueAsDate = new Date(); // Default to today
+            photoDate.valueAsDate = new Date();
         }
     }
 
@@ -169,12 +219,27 @@ document.addEventListener('DOMContentLoaded', () => {
         editingId = null;
     }
 
-    // Expose functions globally
-    window.removePhoto = (id) => {
-        if (confirm('¿Seguro que quieres borrar este recuerdo?')) {
-            photos = photos.filter(p => p.id !== id);
-            savePhotos();
-            renderGallery();
+    // --- Global Exports ---
+
+    window.removePhoto = async (id) => {
+        if (!confirm('¿Seguro que quieres borrar este recuerdo de la nube?')) return;
+
+        try {
+            const photoToDelete = photos.find(p => p.id === id);
+
+            // 1. Delete from DB
+            const { error } = await supabase.from('photos').delete().eq('id', id);
+            if (error) throw error;
+
+            // 2. Delete file from Storage (if path exists)
+            if (photoToDelete && photoToDelete.storage_path) {
+                await supabase.storage.from('lumina-bucket').remove([photoToDelete.storage_path]);
+            }
+
+            await fetchPhotos();
+
+        } catch (err) {
+            alert('Error al borrar: ' + err.message);
         }
     };
 
